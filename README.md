@@ -10,6 +10,8 @@ Library packages
 ```{r}
 library(MASS)
 library(caret)
+library(pROC)
+library(semTools)
 ```
 
 
@@ -37,9 +39,9 @@ colnames(randomEffects) = c("BARC10", "Relapse")
 cor(randomEffects)
 datSenSpec = randomEffects
 datSenSpec$Relapse
-#MedCostsSamp = c(0:100000)
-#MedCosts = sample(Med_costsSamp, n , replace = TRUE)
-#MedCosts
+MedCostsSamp = c(0:100000)
+MedCosts = sample(Med_costsSamp, n , replace = TRUE)
+datSenSpec$MedCosts = MedCosts
 ```
 Build a sensitivity model
 Have a logisitic model that predicts based on BARC-10 scores the probability 
@@ -53,7 +55,6 @@ conf_matrix
 ```
 Now use CARET.  You want the auc to be close to one, which means you are accurately classifying people into the correct categories 
 ```{r}
-library(pROC)
 sensitivity(conf_matrix)
 specificity(conf_matrix)
 roccurve= roc(Recid, predValues)
@@ -65,14 +66,39 @@ So basicaly you would do this for different ranges.  So if we say 50-60 is the g
 So now we want to validate this?
 So I think with this model, we can identify only those variables that will accurately classify whether someone relpased or not.  So if we have multiple variable 
 ```{r}
-library(rpart)
-library(rpart.plot)
-rpartModel1 = rpart(Relapse ~ BARC10, data = datSenSpec, method = "class") 
-summary(rpartModel1)
-par(mar = rep(.1,4))
-plot(rpartModel1)
-text(rpartModel1)
-```
+datSenSpec40Plus = subset(datSenSpec, BARC10 > 39)
+BARC10Model40Plus = glm(Relapse ~ BARC10, family = binomial, data = datSenSpec40Plus)
 
+threshold = .5
+predValues40 = ifelse(predict(BARC10Model40Plus, type = "response") > threshold, 1, 0)
+conf_matrix40 = table(predValues40, datSenSpec40Plus$Relapse)
+conf_matrix40
+
+sensitivity(conf_matrix40)
+specificity(conf_matrix40)
+roccurve40= roc(datSenSpec40Plus$Relapse, predValues40)
+plot(roccurve40)
+
+auc(roccurve)
+auc(roccurve40)
+```
+The question I want to answer is at level of the BARC-10 are more than 50% likely to go to the hospitial.  Sounds like an IRT problem.  Because we want the theta level 
+Maybe just item difficulty in general??
+Can we translate a theta into a score?  
+No that is look at total score not what we want.
+
+So use a machine learning algorithm and then figure out where the BACR-10 level is with 50% going into relapse
+```{r}
+datSenSpec$MedCosts = NULL
+inTrain = createDataPartition(y = datSenSpec$Relapse, p = .75, list = FALSE)
+training = datSenSpec[inTrain,]
+testing = datSenSpec[-inTrain,]
+```
+Now doing cross validation
+```{r}
+fitControl = trainControl(method = "repeatedcv", number = 10)
+gmbFit1 = train(Relapse ~., data = datSenSpec, method = "gbm", trControl = fitControl, verbose =FALSE)
+
+```
 
 
